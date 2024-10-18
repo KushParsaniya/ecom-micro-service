@@ -3,57 +3,84 @@ spring:
     name: api-gateway
   cloud:
     gateway:
+      discovery:
+        locator:
+          enabled: true
       routes:
         - id: product-service
-          uri: http://localhost:8080
+          uri: lb://product-service
           predicates:
             - Path=/products/**
           filters:
             - PrefixPath=/api/v1
+            - name: CircuitBreaker
+              args:
+                name: product-service-circuit-breaker
+                fallbackUri: forward:/fallback
 
         - id: order-service
-          uri: http://localhost:8081
+          uri: lb://order-service
           predicates:
             - Path=/orders/**
           filters:
             - PrefixPath=/api/v1
+            - name: CircuitBreaker
+              args:
+                name: order-service-circuit-breaker
+                fallbackUri: forward:/fallback
 
         - id: inventory-service
-          uri: http://localhost:8082
+          uri: lb://inventory-service
           predicates:
             - Path=/inventory/**
           filters:
             - PrefixPath=/api/v1
+            - name: CircuitBreaker
+              args:
+                name: inventory-service-circuit-breaker
+                fallbackUri: forward:/fallback
 
         # swagger docs routes
         - id: product-service-swagger
-          uri: http://localhost:8080
+          uri: lb://product-service
           predicates:
             - Path=/aggregate/product-service/v3/api-docs
           filters:
             - RewritePath=/aggregate/product-service/v3/api-docs, /v3/api-docs
+            - name: CircuitBreaker
+              args:
+                name: product-service-swagger-circuit-breaker
+                fallbackUri: forward:/fallback
 
         - id: order-service-swagger
-          uri: http://localhost:8081
+          uri: lb://order-service
           predicates:
             - Path=/aggregate/order-service/v3/api-docs
           filters:
             - RewritePath=/aggregate/order-service/v3/api-docs, /v3/api-docs
+            - name: CircuitBreaker
+              args:
+                name: order-service-swagger-circuit-breaker
+                fallbackUri: forward:/fallback
 
         - id: inventory-service-swagger
-          uri: http://localhost:8082
+          uri: lb://inventory-service
           predicates:
             - Path=/aggregate/inventory-service/v3/api-docs
           filters:
             - RewritePath=/aggregate/inventory-service/v3/api-docs, /v3/api-docs
+            - name: CircuitBreaker
+              args:
+                name: inventory-service-swagger-circuit-breaker
+                fallbackUri: forward:/fallback
 
   security:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: http://localhost:9092/realms/demo
+          issuer-uri: http://localhost:9192/realms/demo
 server:
-  port: 9000
+  port: 8085
 
 springdoc:
   swagger-ui:
@@ -67,3 +94,54 @@ springdoc:
         url: /aggregate/inventory-service/v3/api-docs
   api-docs:
     path: /v3/api-docs
+
+
+# actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: '*'
+  health:
+    circuitbreakers:
+      enabled: true
+  endpoint:
+    health:
+      show-details: always
+
+# resilience4j properties
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        register-health-indicator: true
+        sliding-window-type: count_based
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state:
+          seconds: 5
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+        minimum-number-of-calls: 5
+
+
+  # resilience4j timeout properties
+  timelimiter:
+    configs:
+      defaults:
+        timeout-duration:
+          seconds: 150
+
+  # resilience4j retry properties
+  retry:
+    configs:
+      defaults:
+        max-attempts: 3
+        wait-duration:
+          seconds: 2
+
+# Eureka
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
